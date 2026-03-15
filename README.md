@@ -14,24 +14,30 @@ The implementation uses the current Browser Use Python SDK (`browser-use-sdk`) a
 ## Setup
 
 1. Create a virtual environment.
-2. Install the package.
+2. Install dependencies.
 3. Add your Browser Use API key.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -r requirements.txt
 cp .env.example .env
 ```
 
 Set `BROWSER_USE_API_KEY` in `.env`.
+
+If your environment has a newer `pip`, editable install also works:
+
+```bash
+pip install -e .
+```
 
 ## Usage
 
 ### Quick example
 
 ```bash
-shop-agent "wireless headphones" \
+python main.py "wireless headphones" \
   --budget 300 \
   --must-have "active noise cancellation" \
   --must-have "comfortable for long flights" \
@@ -45,7 +51,7 @@ shop-agent "wireless headphones" \
 If you run the command without a query, it prompts for the basics:
 
 ```bash
-shop-agent
+python main.py
 ```
 
 ### Optional flags
@@ -70,4 +76,4 @@ shop-agent
 - The agent does not attempt checkout or payment.
 - If you do not supply criteria, it falls back to default shopping heuristics around value, quality, and retailer trust.
 - Browser Use defaults to a US proxy, which fits this project well for US shopping research. Use `--proxy-country` if you want to override that.
-
+- `shop-agent ...` is available if you install in editable mode; `python main.py ...` works without that extra packaging step.
