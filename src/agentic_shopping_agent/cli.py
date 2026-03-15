@@ -12,6 +12,9 @@ from agentic_shopping_agent.ranking import render_text_report
 from agentic_shopping_agent.service import ShoppingAgentService
 
 
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Research products with Browser Use and return what the agent would buy."
@@ -45,6 +48,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         help="Restrict browsing to specific domains. Repeat for multiple domains.",
+    )
+    parser.add_argument(
+        "--allow-open-web",
+        action="store_true",
+        help="Allow browsing beyond the built-in trusted shopping and review domains.",
     )
     parser.add_argument("--notes", help="Extra context for the browsing task.")
     parser.add_argument("--location", default="United States", help="Shopping location.")
@@ -141,6 +149,7 @@ def _request_from_args(args: argparse.Namespace) -> ShoppingRequest:
         max_options=args.max_options,
         notes=notes,
         allowed_domains=args.domain,
+        allow_open_web=args.allow_open_web,
         proxy_country_code=args.proxy_country,
     )
 
@@ -229,9 +238,9 @@ class ProgressIndicator:
 
     def update(self, message: str) -> None:
         with self._lock:
-            self._message = message
+            self._message = _sanitize_terminal_text(message)
         if not self.enabled:
-            self._print_once(f"[progress] {message}")
+            self._print_once(f"[progress] {self._message}")
 
     def finish(self, success: bool, message: str) -> None:
         if self._start_time is None:
@@ -246,10 +255,10 @@ class ProgressIndicator:
 
         if self.enabled:
             self.stream.write("\r" + (" " * 120) + "\r")
-            self.stream.write(f"{prefix} {message} in {elapsed:.1f}s.\n")
+            self.stream.write(f"{prefix} {_sanitize_terminal_text(message)} in {elapsed:.1f}s.\n")
             self.stream.flush()
         else:
-            self._print_once(f"{prefix} {message} in {elapsed:.1f}s.")
+            self._print_once(f"{prefix} {_sanitize_terminal_text(message)} in {elapsed:.1f}s.")
 
     def _spin(self) -> None:
         while not self._stop_event.wait(0.1):
@@ -266,3 +275,17 @@ class ProgressIndicator:
             return
         print(message, file=self.stream)
         self._last_printed_message = message
+
+
+def _sanitize_terminal_text(value: str) -> str:
+    value = ANSI_ESCAPE_RE.sub("", value)
+    sanitized = []
+    for char in value:
+        codepoint = ord(char)
+        if char in "\r\n\t":
+            sanitized.append(" ")
+            continue
+        if codepoint < 32 or 127 <= codepoint <= 159:
+            continue
+        sanitized.append(char)
+    return "".join(sanitized)

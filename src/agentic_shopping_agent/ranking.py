@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from agentic_shopping_agent.models import (
@@ -10,6 +11,8 @@ from agentic_shopping_agent.models import (
     ShoppingRequest,
     ShoppingResearch,
 )
+
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def rank_options(
@@ -86,26 +89,26 @@ def render_text_report(decision: PurchaseDecision) -> str:
     lines = []
 
     if decision.live_url:
-        lines.append(f"Live browser: {decision.live_url}")
+        lines.append(f"Live browser: {_sanitize_terminal_text(decision.live_url)}")
         lines.append("")
 
     lines.append("Recommendation")
-    lines.append(f"- Research summary: {decision.research_summary}")
+    lines.append(f"- Research summary: {_sanitize_terminal_text(decision.research_summary)}")
     lines.append(
-        f"- I would buy: {product.name} from {product.retailer} for {_price_text(product.price, product.currency or decision.request.currency)}"
+        f"- I would buy: {_sanitize_terminal_text(product.name)} from {_sanitize_terminal_text(product.retailer)} for {_price_text(product.price, product.currency or decision.request.currency)}"
     )
-    lines.append(f"- Why: {_join_reasons(recommended.rationale)}")
-    lines.append(f"- Product page: {product.product_url}")
+    lines.append(f"- Why: {_sanitize_terminal_text(_join_reasons(recommended.rationale))}")
+    lines.append(f"- Product page: {_sanitize_terminal_text(product.product_url)}")
     lines.append(f"- Score: {recommended.total_score:.1f}/100")
 
     if product.summary:
-        lines.append(f"- Summary: {product.summary}")
+        lines.append(f"- Summary: {_sanitize_terminal_text(product.summary)}")
 
     if product.pros:
-        lines.append(f"- Pros: {', '.join(product.pros)}")
+        lines.append(f"- Pros: {_sanitize_terminal_text(', '.join(product.pros))}")
 
     if product.cons:
-        lines.append(f"- Cons: {', '.join(product.cons)}")
+        lines.append(f"- Cons: {_sanitize_terminal_text(', '.join(product.cons))}")
 
     lines.append("")
     lines.append("Runner-ups")
@@ -113,7 +116,7 @@ def render_text_report(decision: PurchaseDecision) -> str:
         for alternative in decision.alternatives:
             alt_product = alternative.product
             lines.append(
-                f"- {alt_product.name} from {alt_product.retailer} at {_price_text(alt_product.price, alt_product.currency or decision.request.currency)} ({alternative.total_score:.1f}/100)"
+                f"- {_sanitize_terminal_text(alt_product.name)} from {_sanitize_terminal_text(alt_product.retailer)} at {_price_text(alt_product.price, alt_product.currency or decision.request.currency)} ({alternative.total_score:.1f}/100)"
             )
     else:
         lines.append("- No runner-ups were strong enough to keep.")
@@ -122,17 +125,17 @@ def render_text_report(decision: PurchaseDecision) -> str:
         lines.append("")
         lines.append("Tradeoffs")
         for tradeoff in decision.notable_tradeoffs:
-            lines.append(f"- {tradeoff}")
+            lines.append(f"- {_sanitize_terminal_text(tradeoff)}")
 
     if decision.missing_information:
         lines.append("")
         lines.append("Missing information")
         for item in decision.missing_information:
-            lines.append(f"- {item}")
+            lines.append(f"- {_sanitize_terminal_text(item)}")
 
     lines.append("")
     lines.append("Final answer")
-    lines.append(f"- {decision.final_answer}")
+    lines.append(f"- {_sanitize_terminal_text(decision.final_answer)}")
     return "\n".join(lines)
 
 
@@ -222,3 +225,17 @@ def _join_reasons(reasons: list[str]) -> str:
     if len(reasons) == 1:
         return reasons[0]
     return ", ".join(reasons[:-1]) + f", and {reasons[-1]}"
+
+
+def _sanitize_terminal_text(value: str) -> str:
+    value = ANSI_ESCAPE_RE.sub("", value)
+    sanitized = []
+    for char in value:
+        codepoint = ord(char)
+        if char in "\r\n\t":
+            sanitized.append(" ")
+            continue
+        if codepoint < 32 or 127 <= codepoint <= 159:
+            continue
+        sanitized.append(char)
+    return "".join(sanitized)

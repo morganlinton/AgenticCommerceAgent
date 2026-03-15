@@ -38,6 +38,10 @@ class ShoppingRequest(BaseModel):
         description="Extra context that should influence the browsing task.",
     )
     allowed_domains: list[str] = Field(default_factory=list)
+    allow_open_web: bool = Field(
+        default=False,
+        description="Whether the agent may browse beyond the built-in trusted domain allowlist.",
+    )
     proxy_country_code: Optional[str] = Field(
         default=None,
         description="Optional Browser Use proxy country override such as us, gb, or de.",
@@ -135,4 +139,3 @@ class PurchaseDecision(BaseModel):
     notable_tradeoffs: list[str] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
     live_url: Optional[str] = None
-

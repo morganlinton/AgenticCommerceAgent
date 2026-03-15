@@ -64,6 +64,7 @@ python main.py
 ### Optional flags
 
 - `--domain amazon.com` to constrain browsing to specific retailers or review sites
+- `--allow-open-web` to bypass the built-in trusted-domain allowlist
 - `--max-options 5` to control how many candidates Browser Use should collect
 - `--json` to print the full recommendation payload as JSON
 - `--show-live-url` to create a Browser Use session and print the live browser URL
@@ -82,6 +83,7 @@ python main.py
 
 - The agent does not attempt checkout or payment.
 - If you do not supply criteria, it falls back to default shopping heuristics around value, quality, and retailer trust.
+- By default, browsing is restricted to a built-in allowlist of major retailers and trusted review sites. Use `--domain` to set your own allowlist or `--allow-open-web` to opt into unrestricted browsing.
 - Browser Use defaults to a US proxy, which fits this project well for US shopping research. Use `--proxy-country` if you want to override that.
 - `shop-agent ...` is available if you install in editable mode; `python main.py ...` works without that extra packaging step.
 
