@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import re
+import sys
+import threading
+import time
 
 from agentic_shopping_agent.models import ShoppingCriterion, ShoppingRequest
 from agentic_shopping_agent.ranking import render_text_report
@@ -65,17 +68,23 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    progress = ProgressIndicator(stream=sys.stderr)
     try:
         request = _request_from_args(args)
+        progress.start("Preparing shopping research")
         decision = asyncio.run(
             ShoppingAgentService().research_and_recommend(
                 request,
                 show_live_url=args.show_live_url or args.keep_session,
                 keep_session=args.keep_session,
+                status_callback=progress.update,
             )
         )
     except Exception as exc:
+        progress.finish(success=False, message="Research failed")
         raise SystemExit(f"Shopping agent failed: {exc}") from exc
+    else:
+        progress.finish(success=True, message="Research complete")
 
     if args.json:
         print(decision.model_dump_json(indent=2, exclude_none=True))
@@ -194,3 +203,66 @@ def _parse_budget_value(value: str) -> float:
     if amount < 0:
         raise ValueError(f"Budget must be non-negative: {value}")
     return amount
+
+
+class ProgressIndicator:
+    def __init__(self, stream) -> None:
+        self.stream = stream
+        self.enabled = bool(getattr(stream, "isatty", lambda: False)())
+        self._frames = "|/-\\"
+        self._frame_index = 0
+        self._message = ""
+        self._last_printed_message = None
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread = None
+        self._start_time = None
+
+    def start(self, message: str) -> None:
+        self._start_time = time.monotonic()
+        self.update(message)
+        if self.enabled:
+            self._thread = threading.Thread(target=self._spin, daemon=True)
+            self._thread.start()
+        else:
+            self._print_once(f"[progress] {message}")
+
+    def update(self, message: str) -> None:
+        with self._lock:
+            self._message = message
+        if not self.enabled:
+            self._print_once(f"[progress] {message}")
+
+    def finish(self, success: bool, message: str) -> None:
+        if self._start_time is None:
+            return
+
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=0.5)
+
+        elapsed = time.monotonic() - self._start_time
+        prefix = "[done]" if success else "[error]"
+
+        if self.enabled:
+            self.stream.write("\r" + (" " * 120) + "\r")
+            self.stream.write(f"{prefix} {message} in {elapsed:.1f}s.\n")
+            self.stream.flush()
+        else:
+            self._print_once(f"{prefix} {message} in {elapsed:.1f}s.")
+
+    def _spin(self) -> None:
+        while not self._stop_event.wait(0.1):
+            with self._lock:
+                message = self._message
+            elapsed = time.monotonic() - self._start_time if self._start_time is not None else 0.0
+            frame = self._frames[self._frame_index % len(self._frames)]
+            self._frame_index += 1
+            self.stream.write(f"\r[{frame}] {message} ({elapsed:.1f}s)")
+            self.stream.flush()
+
+    def _print_once(self, message: str) -> None:
+        if message == self._last_printed_message:
+            return
+        print(message, file=self.stream)
+        self._last_printed_message = message
