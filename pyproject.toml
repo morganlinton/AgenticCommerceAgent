@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-shopping-agent"
+version = "0.1.0"
+description = "A simple shopping agent that uses Browser Use to research products and recommend what to buy."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "browser-use-sdk>=3.0.0",
+  "pydantic>=2.7,<3",
+  "python-dotenv>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+]
+
+[project.scripts]
+shop-agent = "agentic_shopping_agent.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
