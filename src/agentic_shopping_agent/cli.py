@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
 
 from agentic_shopping_agent.models import ShoppingCriterion, ShoppingRequest
 from agentic_shopping_agent.ranking import render_text_report
@@ -13,7 +14,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Research products with Browser Use and return what the agent would buy."
     )
     parser.add_argument("query", nargs="?", help="What you want to buy.")
-    parser.add_argument("--budget", type=float, help="Maximum budget in the chosen currency.")
+    parser.add_argument(
+        "--budget",
+        type=_parse_budget_arg,
+        help="Maximum budget in the chosen currency. Accepts values like 500, $500, or 1,299.99.",
+    )
     parser.add_argument(
         "--criterion",
         action="append",
@@ -113,11 +118,7 @@ def _request_from_args(args: argparse.Namespace) -> ShoppingRequest:
 
     budget = args.budget
     if budget is None:
-        budget_input = _prompt(
-            "Optional budget in your chosen currency (leave blank for none): ",
-            required=False,
-        )
-        budget = float(budget_input) if budget_input else None
+        budget = _prompt_for_budget()
 
     if notes is None:
         notes = _prompt("Extra notes (leave blank for none): ", required=False) or None
@@ -150,3 +151,46 @@ def _split_csv(value: str) -> list[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _prompt_for_budget() -> float | None:
+    while True:
+        value = _prompt(
+            "Optional budget in your chosen currency (leave blank for none): ",
+            required=False,
+        )
+        if not value:
+            return None
+        try:
+            return _parse_budget_value(value)
+        except ValueError:
+            print("Please enter a budget like 500, $500, or 1,299.99.")
+
+
+def _parse_budget_arg(value: str) -> float:
+    try:
+        return _parse_budget_value(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "Budget must look like 500, $500, or 1,299.99."
+        ) from exc
+
+
+def _parse_budget_value(value: str) -> float:
+    cleaned = value.strip()
+    match = re.fullmatch(
+        r"(?ix)"
+        r"(?:[A-Z]{3}\s*)?"
+        r"(?:[$€£¥]\s*)?"
+        r"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?)"
+        r"(?:\s*[A-Z]{3})?",
+        cleaned,
+    )
+
+    if not match:
+        raise ValueError(f"Invalid budget: {value}")
+
+    amount = float(match.group(1).replace(",", ""))
+    if amount < 0:
+        raise ValueError(f"Budget must be non-negative: {value}")
+    return amount
