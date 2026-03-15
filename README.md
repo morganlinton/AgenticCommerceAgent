@@ -32,6 +32,13 @@ If your environment has a newer `pip`, editable install also works:
 pip install -e .
 ```
 
+If editable install fails in an older virtualenv, repair the packaging tools first:
+
+```bash
+python -m ensurepip --upgrade
+python -m pip install --upgrade pip setuptools wheel
+```
+
 ## Usage
 
 ### Quick example
