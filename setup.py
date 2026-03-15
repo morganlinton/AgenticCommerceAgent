@@ -5,6 +5,7 @@ setup(
     name="agentic-shopping-agent",
     version="0.1.0",
     description="A simple shopping agent that uses Browser Use to research products and recommend what to buy.",
+    license="MIT",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
     python_requires=">=3.9",
@@ -16,6 +17,12 @@ setup(
     extras_require={
         "dev": ["pytest>=8,<9"],
     },
+    classifiers=[
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.9",
+    ],
     entry_points={
         "console_scripts": ["shop-agent=agentic_shopping_agent.cli:main"],
     },

@@ -84,3 +84,7 @@ python main.py
 - If you do not supply criteria, it falls back to default shopping heuristics around value, quality, and retailer trust.
 - Browser Use defaults to a US proxy, which fits this project well for US shopping research. Use `--proxy-country` if you want to override that.
 - `shop-agent ...` is available if you install in editable mode; `python main.py ...` works without that extra packaging step.
+
+## License
+
+This project is open source under the MIT License. See `LICENSE`.
