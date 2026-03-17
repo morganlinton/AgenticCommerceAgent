@@ -11,6 +11,7 @@ The implementation uses the current Browser Use Python SDK (`browser-use-sdk`) a
 - Uses Browser Use to browse the web and return typed product research
 - Re-checks the top candidates before answering
 - Prints a structured comparison plus a final `I would buy this` recommendation
+- Includes a built-in eval harness with benchmark shopping scenarios and report output
 
 ## Setup
 
@@ -72,9 +73,44 @@ python main.py
 - `--keep-session` to keep that Browser Use session alive after the run
 - `--proxy-country gb` to override Browser Use's default US proxy
 
+## Evals
+
+The repository includes a small benchmark harness so you can measure recommendation quality over time instead of judging prompt changes by feel.
+
+List the built-in scenarios:
+
+```bash
+python eval_main.py --list-scenarios
+```
+
+Run the first five built-in scenarios and write reports:
+
+```bash
+python eval_main.py --max-scenarios 5
+```
+
+Run specific scenarios into a custom output folder:
+
+```bash
+python eval_main.py \
+  --scenario-id travel-headphones \
+  --scenario-id hiking-backpack \
+  --output-dir eval_reports
+```
+
+If you install the package in editable mode, the same harness is available as:
+
+```bash
+shop-agent-eval --list-scenarios
+```
+
+The eval runner writes timestamped JSON and Markdown reports plus `latest.json` and `latest.md` snapshots in the chosen output directory.
+
 ## Files
 
 - `src/agentic_shopping_agent/cli.py`: CLI and interactive prompt handling
+- `src/agentic_shopping_agent/eval_cli.py`: CLI for running benchmark scenarios
+- `src/agentic_shopping_agent/evals.py`: eval runner, checks, and report generation
 - `src/agentic_shopping_agent/service.py`: Browser Use integration and orchestration
 - `src/agentic_shopping_agent/ranking.py`: deterministic scoring and recommendation logic
 - `src/agentic_shopping_agent/prompting.py`: task prompt construction

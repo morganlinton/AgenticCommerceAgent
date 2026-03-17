@@ -70,7 +70,8 @@ def build_purchase_decision(
     comparison_rows = _build_comparison_rows(ranked_options, request.criteria)
 
     option = recommended.product
-    price_text = _price_text(option.price, option.currency or request.currency)
+    display_price, display_currency = _resolved_option_price(recommended, request.currency)
+    price_text = _price_text(display_price, display_currency)
     alternative_text = ", ".join(
         f"{alternative.product.name} ({alternative.total_score:.1f})" for alternative in alternatives
     )
@@ -113,8 +114,9 @@ def render_text_report(decision: PurchaseDecision) -> str:
 
     lines.append("Recommendation")
     lines.append(f"- Research summary: {_sanitize_terminal_text(decision.research_summary)}")
+    recommended_price, recommended_currency = _resolved_option_price(recommended, decision.request.currency)
     lines.append(
-        f"- I would buy: {_sanitize_terminal_text(product.name)} from {_sanitize_terminal_text(product.retailer)} for {_price_text(product.price, product.currency or decision.request.currency)}"
+        f"- I would buy: {_sanitize_terminal_text(product.name)} from {_sanitize_terminal_text(product.retailer)} for {_price_text(recommended_price, recommended_currency)}"
     )
     lines.append(f"- Why: {_sanitize_terminal_text(_join_reasons(recommended.rationale))}")
     lines.append(f"- Product page: {_sanitize_terminal_text(product.product_url)}")
@@ -147,8 +149,9 @@ def render_text_report(decision: PurchaseDecision) -> str:
     if decision.alternatives:
         for alternative in decision.alternatives:
             alt_product = alternative.product
+            alt_price, alt_currency = _resolved_option_price(alternative, decision.request.currency)
             lines.append(
-                f"- {_sanitize_terminal_text(alt_product.name)} from {_sanitize_terminal_text(alt_product.retailer)} at {_price_text(alt_product.price, alt_product.currency or decision.request.currency)} ({alternative.total_score:.1f}/100)"
+                f"- {_sanitize_terminal_text(alt_product.name)} from {_sanitize_terminal_text(alt_product.retailer)} at {_price_text(alt_price, alt_currency)} ({alternative.total_score:.1f}/100)"
             )
     else:
         lines.append("- No runner-ups were strong enough to keep.")
@@ -322,6 +325,18 @@ def _price_text(price: Optional[float], currency: str) -> str:
     if price is None:
         return f"an unknown price in {currency}"
     return f"{price:.2f} {currency}"
+
+
+def _resolved_option_price(
+    ranked_option: RankedOption,
+    fallback_currency: str,
+) -> tuple[Optional[float], str]:
+    verification = ranked_option.verification
+    if verification is not None and verification.verified_price is not None:
+        return verification.verified_price, verification.verified_currency or fallback_currency
+
+    product = ranked_option.product
+    return product.price, product.currency or fallback_currency
 
 
 def _join_reasons(reasons: list[str]) -> str:

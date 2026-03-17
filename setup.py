@@ -24,6 +24,9 @@ setup(
         "Programming Language :: Python :: 3.9",
     ],
     entry_points={
-        "console_scripts": ["shop-agent=agentic_shopping_agent.cli:main"],
+        "console_scripts": [
+            "shop-agent=agentic_shopping_agent.cli:main",
+            "shop-agent-eval=agentic_shopping_agent.eval_cli:main",
+        ],
     },
 )

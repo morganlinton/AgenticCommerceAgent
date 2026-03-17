@@ -168,6 +168,9 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+# Local eval artifacts
+eval_reports/
+
 # Ruff stuff:
 .ruff_cache/
 

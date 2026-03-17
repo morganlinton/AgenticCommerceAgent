@@ -28,6 +28,7 @@ dev = [
 
 [project.scripts]
 shop-agent = "agentic_shopping_agent.cli:main"
+shop-agent-eval = "agentic_shopping_agent.eval_cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
