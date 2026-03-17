@@ -3,9 +3,11 @@ import asyncio
 from agentic_shopping_agent.models import (
     CriterionAssessment,
     ProductOption,
+    ProductVerification,
     ShoppingCriterion,
     ShoppingRequest,
     ShoppingResearch,
+    VerificationReport,
 )
 from agentic_shopping_agent.config import Settings
 from agentic_shopping_agent.service import DEFAULT_SAFE_DOMAINS, ShoppingAgentService
@@ -36,7 +38,7 @@ class _FakeBrowserUse:
         self.api_key = api_key
         self.sessions = _FakeSessions()
         self.run_calls = []
-        self.next_output = ShoppingResearch(
+        self.research_output = ShoppingResearch(
             search_summary="Found strong options across trusted stores.",
             options=[
                 ProductOption(
@@ -79,11 +81,44 @@ class _FakeBrowserUse:
                 ),
             ],
         )
+        self.verification_output = VerificationReport(
+            summary="Top candidates still match their live listings.",
+            checks=[
+                ProductVerification(
+                    product_name="Safe Option",
+                    product_url="https://example.com/safe",
+                    retailer="Trusted Store",
+                    product_still_matches=True,
+                    verified_price=199,
+                    verified_currency="USD",
+                    verified_availability="In Stock",
+                    price_matches_original=True,
+                    availability_matches_original=True,
+                    notes="Current price and availability still match the original research.",
+                    source_urls=["https://example.com/safe"],
+                ),
+                ProductVerification(
+                    product_name="Runner Up",
+                    product_url="https://example.com/runner-up",
+                    retailer="Trusted Store",
+                    product_still_matches=True,
+                    verified_price=249,
+                    verified_currency="USD",
+                    verified_availability="In Stock",
+                    price_matches_original=True,
+                    availability_matches_original=True,
+                    notes="Runner-up still matches the original listing.",
+                    source_urls=["https://example.com/runner-up"],
+                ),
+            ],
+        )
         _FakeBrowserUse.last_instance = self
 
     async def run(self, task: str, **kwargs):
         self.run_calls.append({"task": task, **kwargs})
-        return _FakeRunResult(self.next_output)
+        if "Products to verify:" in task:
+            return _FakeRunResult(self.verification_output)
+        return _FakeRunResult(self.research_output)
 
 
 def test_effective_allowed_domains_defaults_to_safe_allowlist() -> None:
@@ -114,9 +149,14 @@ def test_proxy_country_does_not_create_live_session_without_explicit_opt_in(monk
 
     assert fake_client is not None
     assert fake_client.sessions.create_calls == []
+    assert len(fake_client.run_calls) == 2
     assert fake_client.run_calls[0]["proxy_country_code"] == "gb"
+    assert fake_client.run_calls[1]["proxy_country_code"] == "gb"
     assert fake_client.run_calls[0]["allowed_domains"] == list(DEFAULT_SAFE_DOMAINS)
+    assert fake_client.run_calls[1]["allowed_domains"] == list(DEFAULT_SAFE_DOMAINS)
     assert decision.live_url is None
+    assert decision.verification_summary == "Top candidates still match their live listings."
+    assert decision.comparison_rows[0].verification_status == "verified"
 
 
 def test_show_live_url_creates_session_and_returns_live_url(monkeypatch) -> None:
@@ -132,6 +172,31 @@ def test_show_live_url_creates_session_and_returns_live_url(monkeypatch) -> None
 
     assert fake_client is not None
     assert len(fake_client.sessions.create_calls) == 1
+    assert len(fake_client.run_calls) == 2
     assert fake_client.run_calls[0]["session_id"] == "session-123"
+    assert fake_client.run_calls[1]["session_id"] == "session-123"
     assert "proxy_country_code" not in fake_client.run_calls[0]
+    assert "proxy_country_code" not in fake_client.run_calls[1]
     assert decision.live_url == "https://live.example/session-123"
+
+
+def test_verification_failure_falls_back_to_initial_ranking(monkeypatch) -> None:
+    class FailingVerificationBrowserUse(_FakeBrowserUse):
+        async def run(self, task: str, **kwargs):
+            self.run_calls.append({"task": task, **kwargs})
+            if "Products to verify:" in task:
+                raise RuntimeError("verification temporarily unavailable")
+            return _FakeRunResult(self.research_output)
+
+    monkeypatch.setattr("agentic_shopping_agent.service.AsyncBrowserUse", FailingVerificationBrowserUse)
+    service = ShoppingAgentService(Settings(browser_use_api_key="test-key"))
+    request = ShoppingRequest(
+        query="portable charger",
+        criteria=[ShoppingCriterion(name="battery life", kind="preference", weight=1.0)],
+    )
+
+    decision = asyncio.run(service.research_and_recommend(request))
+
+    assert decision.recommended_option.product.name == "Safe Option"
+    assert any("Verification pass failed" in item for item in decision.missing_information)
+    assert decision.comparison_rows[0].verification_status == "not_run"

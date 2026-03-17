@@ -2,14 +2,15 @@
 
 This repository contains a minimal shopping agent built on [Browser Use](https://browser-use.com/). You give it a product request plus the criteria that matter to you, it researches live product pages and reviews, then it returns the single item it would buy.
 
-The implementation uses the current Browser Use Python SDK (`browser-use-sdk`) and its v3 async client (`browser_use_sdk.v3.AsyncBrowserUse`) with structured output. The browser agent gathers product candidates; the local app then ranks those options deterministically so the final recommendation is transparent and repeatable.
+The implementation uses the current Browser Use Python SDK (`browser-use-sdk`) and its v3 async client (`browser_use_sdk.v3.AsyncBrowserUse`) with structured output. The browser agent gathers product candidates, the local app ranks those options deterministically, and then a final verification pass re-checks the top candidates before the recommendation is returned.
 
 ## What it does
 
 - Accepts a product request like `wireless noise-cancelling headphones`
 - Lets you add preferences, must-haves, avoid rules, a budget, and optional retailer/domain filters
 - Uses Browser Use to browse the web and return typed product research
-- Scores the options locally and prints a final `I would buy this` recommendation plus runner-ups
+- Re-checks the top candidates before answering
+- Prints a structured comparison plus a final `I would buy this` recommendation
 
 ## Setup
 
@@ -84,6 +85,7 @@ python main.py
 - The agent does not attempt checkout or payment.
 - If you do not supply criteria, it falls back to default shopping heuristics around value, quality, and retailer trust.
 - By default, browsing is restricted to a built-in allowlist of major retailers and trusted review sites. Use `--domain` to set your own allowlist or `--allow-open-web` to opt into unrestricted browsing.
+- Every run performs an initial research pass and then a verification pass over the top candidates before making the final recommendation.
 - Browser Use defaults to a US proxy, which fits this project well for US shopping research. Use `--proxy-country` if you want to override that.
 - `shop-agent ...` is available if you install in editable mode; `python main.py ...` works without that extra packaging step.
 

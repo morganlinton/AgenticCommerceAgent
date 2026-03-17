@@ -116,6 +116,57 @@ class ShoppingResearch(BaseModel):
     missing_information: list[str] = Field(default_factory=list)
 
 
+class ProductVerification(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product_name: str = Field(description="Product name being re-checked.")
+    product_url: str = Field(description="Product URL that was revisited.")
+    retailer: Optional[str] = Field(
+        default=None,
+        description="Retailer confirmed during verification.",
+    )
+    product_still_matches: bool = Field(
+        description="Whether the revisited page still clearly matches the originally researched product."
+    )
+    verified_price: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description="Current verified price if available.",
+    )
+    verified_currency: Optional[str] = Field(
+        default=None,
+        description="Currency code for the verified price.",
+    )
+    verified_availability: Optional[str] = Field(
+        default=None,
+        description="Current availability signal from the verification pass.",
+    )
+    price_matches_original: Optional[bool] = Field(
+        default=None,
+        description="Whether the current price still matches the original research closely enough.",
+    )
+    availability_matches_original: Optional[bool] = Field(
+        default=None,
+        description="Whether the current availability still matches the original research.",
+    )
+    notes: str = Field(description="Short explanation of what verification found.")
+    source_urls: list[str] = Field(
+        default_factory=list,
+        description="URLs revisited during verification.",
+    )
+
+
+class VerificationReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(description="Short summary of what changed or was confirmed.")
+    checks: list[ProductVerification] = Field(
+        default_factory=list,
+        description="Verification checks for the top candidate products.",
+    )
+    missing_information: list[str] = Field(default_factory=list)
+
+
 class RankedOption(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -125,7 +176,39 @@ class RankedOption(BaseModel):
     budget_score: float = Field(description="Budget fit component.")
     quality_score: float = Field(description="Quality signal component.")
     trust_score: float = Field(description="Source completeness component.")
+    verification_score: float = Field(description="Final verification component.")
     rationale: list[str] = Field(default_factory=list)
+    verification: Optional[ProductVerification] = None
+
+
+class ComparisonCriterionRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    criterion_name: str
+    criterion_kind: Literal["preference", "must_have", "avoid"]
+    score: Optional[int] = Field(default=None, ge=0, le=10)
+    evidence: Optional[str] = None
+
+
+class ComparisonRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rank: int = Field(ge=1)
+    product_name: str
+    retailer: str
+    price: Optional[float] = Field(default=None, ge=0)
+    currency: Optional[str] = None
+    availability: Optional[str] = None
+    total_score: float
+    criterion_score: float
+    budget_score: float
+    quality_score: float
+    trust_score: float
+    verification_score: float
+    verification_status: Literal["verified", "changed", "uncertain", "not_run"]
+    verification_notes: Optional[str] = None
+    source_count: int = Field(ge=0)
+    criterion_breakdown: list[ComparisonCriterionRow] = Field(default_factory=list)
 
 
 class PurchaseDecision(BaseModel):
@@ -135,7 +218,9 @@ class PurchaseDecision(BaseModel):
     research_summary: str
     recommended_option: RankedOption
     alternatives: list[RankedOption] = Field(default_factory=list)
+    comparison_rows: list[ComparisonRow] = Field(default_factory=list)
     final_answer: str
     notable_tradeoffs: list[str] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
+    verification_summary: Optional[str] = None
     live_url: Optional[str] = None

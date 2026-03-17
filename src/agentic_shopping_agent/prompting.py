@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_shopping_agent.models import ShoppingCriterion, ShoppingRequest
+from agentic_shopping_agent.models import RankedOption, ShoppingCriterion, ShoppingRequest
 
 
 DEFAULT_CRITERIA = [
@@ -65,3 +65,55 @@ Output expectations:
 - Prefer products with enough evidence to justify a confident recommendation.
 - Include useful pros, cons, and tradeoffs.
 """.strip()
+
+
+def build_verification_task(
+    request: ShoppingRequest,
+    ranked_options: list[RankedOption],
+) -> str:
+    candidate_lines = []
+    for index, ranked_option in enumerate(ranked_options, start=1):
+        product = ranked_option.product
+        candidate_lines.append(
+            "\n".join(
+                [
+                    f"{index}. Product name: {product.name}",
+                    f"   Retailer: {product.retailer}",
+                    f"   Product URL: {product.product_url}",
+                    f"   Original price: {_format_price(product.price, product.currency or request.currency)}",
+                    f"   Original availability: {product.availability or 'Unknown'}",
+                ]
+            )
+        )
+
+    candidates_text = "\n".join(candidate_lines)
+
+    return f"""
+You are verifying previously researched shopping options before the final recommendation.
+
+Shopper request: {request.query}
+Location: {request.location}
+Currency preference: {request.currency}
+
+Products to verify:
+{candidates_text}
+
+Verification instructions:
+1. Open each exact product URL first. Do not search for new products unless the page is broken.
+2. Confirm whether the page still matches the same product.
+3. Verify current price, currency, and availability if the page shows them.
+4. Compare those facts against the original research and report whether price or availability changed.
+5. Include short notes and the URLs you used.
+6. Do not attempt checkout, login, or payment.
+
+Output expectations:
+- Keep notes factual and concise.
+- If a fact cannot be confirmed, say so clearly.
+- Focus on whether the current listing still supports the recommendation.
+""".strip()
+
+
+def _format_price(price: float | None, currency: str) -> str:
+    if price is None:
+        return f"Unknown ({currency})"
+    return f"{price:.2f} {currency}"
