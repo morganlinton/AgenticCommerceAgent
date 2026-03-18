@@ -13,6 +13,7 @@ The implementation uses the current Browser Use Python SDK (`browser-use-sdk`) a
 - Prints a structured comparison plus a final `I would buy this` recommendation
 - Includes a built-in eval harness with benchmark shopping scenarios and report output
 - Includes a local web app with live progress and side-by-side comparison output
+- Includes persistent watchlists with autonomous reruns, run history, and alerting
 
 ## Setup
 
@@ -66,7 +67,7 @@ python main.py
 
 ### Web app
 
-Run the local web app if you want a richer interface with live progress, comparison tables, and a shareable browser tab instead of a terminal-only flow:
+Run the local web app if you want a richer interface with live progress, comparison tables, one-off runs, and persistent watchlists:
 
 ```bash
 python web_main.py
@@ -78,6 +79,20 @@ If you install the package in editable mode, the same interface is available as:
 
 ```bash
 shop-agent-web --host 127.0.0.1 --port 8000
+```
+
+The web app now supports:
+
+- One-off runs with live progress updates and the final comparison table
+- Watchlists that persist to `runtime/watchlists.json` by default
+- Autonomous reruns on a minute-based schedule
+- Diffing between runs for winner changes, price drops, target-price hits, and back-in-stock events
+- An alert feed plus recent run history for each saved watchlist
+
+You can override the persistence path or scheduler frequency if needed:
+
+```bash
+python web_main.py --storage-path runtime/watchlists.json --scheduler-poll-seconds 30
 ```
 
 ### Optional flags
@@ -129,6 +144,7 @@ The eval runner writes timestamped JSON and Markdown reports plus `latest.json` 
 - `src/agentic_shopping_agent/eval_cli.py`: CLI for running benchmark scenarios
 - `src/agentic_shopping_agent/evals.py`: eval runner, checks, and report generation
 - `src/agentic_shopping_agent/service.py`: Browser Use integration and orchestration
+- `src/agentic_shopping_agent/watchlists.py`: persistent watchlists, autonomous reruns, and diff-based alerts
 - `src/agentic_shopping_agent/webapp.py`: in-memory job manager and local HTTP server
 - `src/agentic_shopping_agent/web_ui.py`: built-in browser UI
 - `src/agentic_shopping_agent/ranking.py`: deterministic scoring and recommendation logic
@@ -141,6 +157,7 @@ The eval runner writes timestamped JSON and Markdown reports plus `latest.json` 
 - If you do not supply criteria, it falls back to default shopping heuristics around value, quality, and retailer trust.
 - By default, browsing is restricted to a built-in allowlist of major retailers and trusted review sites. Use `--domain` to set your own allowlist or `--allow-open-web` to opt into unrestricted browsing.
 - Every run performs an initial research pass and then a verification pass over the top candidates before making the final recommendation.
+- Watchlist storage is local JSON, not a hosted service. Delete `runtime/watchlists.json` if you want to reset the watchlist database.
 - Browser Use defaults to a US proxy, which fits this project well for US shopping research. Use `--proxy-country` if you want to override that.
 - `shop-agent ...`, `shop-agent-eval ...`, and `shop-agent-web ...` are available if you install in editable mode; `python main.py ...`, `python eval_main.py ...`, and `python web_main.py ...` work without that extra packaging step.
 

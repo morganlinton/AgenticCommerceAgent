@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from agentic_shopping_agent.webapp import ShoppingWebAppServer
 
@@ -20,6 +21,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=8000,
         help="Bind port for the local web server.",
     )
+    parser.add_argument(
+        "--storage-path",
+        type=Path,
+        default=Path("runtime/watchlists.json"),
+        help="Path used to persist watchlists, alerts, and run history.",
+    )
+    parser.add_argument(
+        "--scheduler-poll-seconds",
+        type=float,
+        default=30.0,
+        help="How often the watchlist scheduler checks for due reruns.",
+    )
     return parser
 
 
@@ -27,7 +40,12 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    server = ShoppingWebAppServer(host=args.host, port=args.port)
+    server = ShoppingWebAppServer(
+        host=args.host,
+        port=args.port,
+        storage_path=args.storage_path,
+        scheduler_interval_seconds=args.scheduler_poll_seconds,
+    )
     print(f"Agentic Shopping Agent web app running at {server.server_url}")
     print("Press Ctrl+C to stop.")
 

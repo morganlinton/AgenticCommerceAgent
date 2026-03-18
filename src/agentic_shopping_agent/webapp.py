@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 from urllib.parse import urlparse
 
@@ -17,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from agentic_shopping_agent.models import PurchaseDecision, ShoppingCriterion, ShoppingRequest
 from agentic_shopping_agent.ranking import render_text_report
+from agentic_shopping_agent.watchlists import DEFAULT_SCHEDULE_MINUTES, WatchlistManager
 from agentic_shopping_agent.web_ui import APP_HTML
 
 if TYPE_CHECKING:
@@ -28,7 +30,7 @@ MAX_PROGRESS_MESSAGES = 30
 MAX_RETAINED_JOBS = 40
 
 
-class WebShoppingRequestPayload(BaseModel):
+class ShoppingRequestPayloadBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query: str = Field(min_length=1)
@@ -126,6 +128,34 @@ class WebShoppingRequestPayload(BaseModel):
             allow_open_web=self.allow_open_web,
             proxy_country_code=self.proxy_country_code,
         )
+
+
+class WebShoppingRequestPayload(ShoppingRequestPayloadBase):
+    model_config = ConfigDict(extra="forbid")
+
+    show_live_url: bool = False
+    keep_session: bool = False
+
+
+class WebWatchlistPayload(ShoppingRequestPayloadBase):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = None
+    schedule_minutes: int = Field(default=DEFAULT_SCHEDULE_MINUTES, ge=15, le=10080)
+    target_price: Optional[float] = Field(default=None, ge=0)
+    enabled: bool = True
+    run_immediately: bool = True
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _normalize_name(cls, value: object) -> Optional[str]:
+        if value is None:
+            return None
+        text = _sanitize_text(str(value)).strip()
+        return text or None
+
+    def resolved_name(self) -> str:
+        return self.name or self.query
 
 
 @dataclass
@@ -299,6 +329,7 @@ class ShoppingJobManager:
 
 class ShoppingWebRequestHandler(BaseHTTPRequestHandler):
     job_manager: ShoppingJobManager
+    watchlist_manager: WatchlistManager
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -308,6 +339,27 @@ class ShoppingWebRequestHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/health":
             self._send_json({"status": "ok"})
+            return
+
+        if parsed.path == "/api/dashboard":
+            self._send_json(self.watchlist_manager.get_dashboard_snapshot())
+            return
+
+        if parsed.path == "/api/alerts":
+            self._send_json(self.watchlist_manager.list_alerts_snapshot())
+            return
+
+        if parsed.path == "/api/watchlists":
+            self._send_json(self.watchlist_manager.list_watchlists_snapshot())
+            return
+
+        if parsed.path.startswith("/api/watchlists/"):
+            watchlist_id = parsed.path.removeprefix("/api/watchlists/").strip("/")
+            snapshot = self.watchlist_manager.get_watchlist_snapshot(watchlist_id)
+            if snapshot is None:
+                self._send_json({"error": "Watchlist not found."}, status=HTTPStatus.NOT_FOUND)
+                return
+            self._send_json(snapshot)
             return
 
         if parsed.path.startswith("/api/jobs/"):
@@ -323,24 +375,59 @@ class ShoppingWebRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
-        if parsed.path != "/api/jobs":
-            self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
-            return
-
         try:
             raw_body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
             data = json.loads(raw_body.decode("utf-8") or "{}")
-            payload = WebShoppingRequestPayload.model_validate(data)
-            job_id = self.job_manager.start_job(payload)
-            snapshot = self.job_manager.get_snapshot(job_id)
-            self._send_json(
-                {
-                    "job_id": job_id,
-                    "job_url": f"/api/jobs/{job_id}",
-                    "snapshot": snapshot,
-                },
-                status=HTTPStatus.ACCEPTED,
-            )
+
+            if parsed.path == "/api/jobs":
+                payload = WebShoppingRequestPayload.model_validate(data)
+                job_id = self.job_manager.start_job(payload)
+                snapshot = self.job_manager.get_snapshot(job_id)
+                self._send_json(
+                    {
+                        "job_id": job_id,
+                        "job_url": f"/api/jobs/{job_id}",
+                        "snapshot": snapshot,
+                    },
+                    status=HTTPStatus.ACCEPTED,
+                )
+                return
+
+            if parsed.path == "/api/watchlists":
+                payload = WebWatchlistPayload.model_validate(data)
+                snapshot = self.watchlist_manager.create_watchlist(
+                    name=payload.resolved_name(),
+                    request=payload.to_shopping_request(),
+                    request_payload=payload.model_dump(exclude_none=True),
+                    schedule_minutes=payload.schedule_minutes,
+                    target_price=payload.target_price,
+                    enabled=payload.enabled,
+                    run_immediately=payload.run_immediately,
+                )
+                self._send_json(snapshot, status=HTTPStatus.CREATED)
+                return
+
+            if parsed.path.startswith("/api/watchlists/"):
+                remainder = parsed.path.removeprefix("/api/watchlists/").strip("/")
+                parts = remainder.split("/")
+                if len(parts) == 2 and parts[1] == "run":
+                    snapshot = self.watchlist_manager.trigger_run(parts[0], trigger="manual")
+                    if snapshot is None:
+                        self._send_json({"error": "Watchlist not found."}, status=HTTPStatus.NOT_FOUND)
+                        return
+                    self._send_json(snapshot, status=HTTPStatus.ACCEPTED)
+                    return
+
+                if len(parts) == 2 and parts[1] == "toggle":
+                    enabled = bool(data.get("enabled"))
+                    snapshot = self.watchlist_manager.set_enabled(parts[0], enabled=enabled)
+                    if snapshot is None:
+                        self._send_json({"error": "Watchlist not found."}, status=HTTPStatus.NOT_FOUND)
+                        return
+                    self._send_json(snapshot)
+                    return
+
+            self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
         except json.JSONDecodeError:
             self._send_json(
                 {"error": "Request body must be valid JSON."},
@@ -381,13 +468,23 @@ class ShoppingWebAppServer:
         host: str = "127.0.0.1",
         port: int = 8000,
         job_manager: Optional[ShoppingJobManager] = None,
+        watchlist_manager: Optional[WatchlistManager] = None,
+        storage_path: Optional[Path] = None,
+        scheduler_interval_seconds: float = 30.0,
     ) -> None:
         self.job_manager = job_manager or ShoppingJobManager()
+        self.watchlist_manager = watchlist_manager or WatchlistManager(
+            storage_path=storage_path or Path("runtime/watchlists.json"),
+            poll_interval_seconds=scheduler_interval_seconds,
+        )
+        self.watchlist_manager.start()
 
         manager = self.job_manager
+        watchlist_manager_instance = self.watchlist_manager
 
         class BoundHandler(ShoppingWebRequestHandler):
             job_manager = manager
+            watchlist_manager = watchlist_manager_instance
 
         self._httpd = ThreadingHTTPServer((host, port), BoundHandler)
 
@@ -402,6 +499,7 @@ class ShoppingWebAppServer:
 
     def shutdown(self) -> None:
         self._httpd.shutdown()
+        self.watchlist_manager.stop()
 
     def server_close(self) -> None:
         self._httpd.server_close()

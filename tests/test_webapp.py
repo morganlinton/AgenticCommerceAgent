@@ -104,8 +104,13 @@ def test_job_manager_captures_failure() -> None:
     assert "browser session failed" in snapshot["error"]
 
 
-def test_web_server_health_endpoint() -> None:
-    server = ShoppingWebAppServer(host="127.0.0.1", port=0, job_manager=ShoppingJobManager())
+def test_web_server_health_endpoint(tmp_path) -> None:
+    server = ShoppingWebAppServer(
+        host="127.0.0.1",
+        port=0,
+        job_manager=ShoppingJobManager(),
+        storage_path=tmp_path / "watchlists.json",
+    )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
