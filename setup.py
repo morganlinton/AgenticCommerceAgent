@@ -27,6 +27,7 @@ setup(
         "console_scripts": [
             "shop-agent=agentic_shopping_agent.cli:main",
             "shop-agent-eval=agentic_shopping_agent.eval_cli:main",
+            "shop-agent-web=agentic_shopping_agent.web_cli:main",
         ],
     },
 )

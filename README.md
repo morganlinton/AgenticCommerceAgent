@@ -12,6 +12,7 @@ The implementation uses the current Browser Use Python SDK (`browser-use-sdk`) a
 - Re-checks the top candidates before answering
 - Prints a structured comparison plus a final `I would buy this` recommendation
 - Includes a built-in eval harness with benchmark shopping scenarios and report output
+- Includes a local web app with live progress and side-by-side comparison output
 
 ## Setup
 
@@ -63,6 +64,22 @@ If you run the command without a query, it prompts for the basics:
 python main.py
 ```
 
+### Web app
+
+Run the local web app if you want a richer interface with live progress, comparison tables, and a shareable browser tab instead of a terminal-only flow:
+
+```bash
+python web_main.py
+```
+
+The server binds to `127.0.0.1:8000` by default. Then open `http://127.0.0.1:8000` in your browser.
+
+If you install the package in editable mode, the same interface is available as:
+
+```bash
+shop-agent-web --host 127.0.0.1 --port 8000
+```
+
 ### Optional flags
 
 - `--domain amazon.com` to constrain browsing to specific retailers or review sites
@@ -112,6 +129,8 @@ The eval runner writes timestamped JSON and Markdown reports plus `latest.json` 
 - `src/agentic_shopping_agent/eval_cli.py`: CLI for running benchmark scenarios
 - `src/agentic_shopping_agent/evals.py`: eval runner, checks, and report generation
 - `src/agentic_shopping_agent/service.py`: Browser Use integration and orchestration
+- `src/agentic_shopping_agent/webapp.py`: in-memory job manager and local HTTP server
+- `src/agentic_shopping_agent/web_ui.py`: built-in browser UI
 - `src/agentic_shopping_agent/ranking.py`: deterministic scoring and recommendation logic
 - `src/agentic_shopping_agent/prompting.py`: task prompt construction
 - `src/agentic_shopping_agent/models.py`: Pydantic models for structured output
@@ -123,7 +142,7 @@ The eval runner writes timestamped JSON and Markdown reports plus `latest.json` 
 - By default, browsing is restricted to a built-in allowlist of major retailers and trusted review sites. Use `--domain` to set your own allowlist or `--allow-open-web` to opt into unrestricted browsing.
 - Every run performs an initial research pass and then a verification pass over the top candidates before making the final recommendation.
 - Browser Use defaults to a US proxy, which fits this project well for US shopping research. Use `--proxy-country` if you want to override that.
-- `shop-agent ...` is available if you install in editable mode; `python main.py ...` works without that extra packaging step.
+- `shop-agent ...`, `shop-agent-eval ...`, and `shop-agent-web ...` are available if you install in editable mode; `python main.py ...`, `python eval_main.py ...`, and `python web_main.py ...` work without that extra packaging step.
 
 ## License
 
