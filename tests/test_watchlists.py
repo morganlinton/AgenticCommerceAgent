@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import stat
 import threading
 import time
 
@@ -16,7 +18,9 @@ from agentic_shopping_agent.models import (
 )
 from agentic_shopping_agent.ranking import build_purchase_decision
 from agentic_shopping_agent.watchlists import (
+    MAX_WATCHLISTS,
     WatchlistDatabase,
+    WatchlistLimitError,
     WatchlistManager,
     WatchlistRecord,
     WatchlistRun,
@@ -43,6 +47,25 @@ def test_watchlist_manager_persists_created_watchlist(tmp_path) -> None:
     assert snapshot["name"] == "TV watch"
     assert dashboard["watchlists"][0]["name"] == "TV watch"
     assert dashboard["watchlists"][0]["target_price"] == 999
+
+
+def test_watchlist_manager_uses_restrictive_file_permissions(tmp_path) -> None:
+    manager = WatchlistManager(storage_path=tmp_path / "watchlists.json", service_factory=lambda: _FakeService([]))
+    request = _build_request()
+
+    manager.create_watchlist(
+        name="TV watch",
+        request=request,
+        request_payload={"query": request.query},
+        schedule_minutes=180,
+        target_price=999,
+        enabled=False,
+        run_immediately=False,
+    )
+
+    if os.name == "posix":
+        mode = stat.S_IMODE((tmp_path / "watchlists.json").stat().st_mode)
+        assert mode == 0o600
 
 
 def test_watchlist_manager_generates_alerts_for_price_and_winner_changes(tmp_path) -> None:
@@ -202,6 +225,36 @@ def test_watchlist_manager_recovers_interrupted_runs_on_restart(tmp_path) -> Non
     assert snapshot["recent_runs"][0]["state"] == "failed"
     assert snapshot["next_run_at"] is not None
     assert alerts[0]["title"] == "Watchlist recovered after restart"
+
+
+def test_watchlist_manager_enforces_watchlist_limit(tmp_path) -> None:
+    manager = WatchlistManager(storage_path=tmp_path / "watchlists.json", service_factory=lambda: _FakeService([]))
+    request = _build_request()
+
+    for index in range(MAX_WATCHLISTS):
+        manager.create_watchlist(
+            name=f"Watch {index}",
+            request=request,
+            request_payload={"query": request.query},
+            schedule_minutes=180,
+            target_price=None,
+            enabled=False,
+            run_immediately=False,
+        )
+
+    try:
+        manager.create_watchlist(
+            name="Overflow",
+            request=request,
+            request_payload={"query": request.query},
+            schedule_minutes=180,
+            target_price=None,
+            enabled=False,
+            run_immediately=False,
+        )
+    except WatchlistLimitError:
+        return
+    raise AssertionError("Expected WatchlistLimitError when exceeding the watchlist cap.")
 
 
 class _FakeService:

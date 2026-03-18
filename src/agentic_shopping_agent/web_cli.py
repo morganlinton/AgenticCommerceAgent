@@ -33,6 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=30.0,
         help="How often the watchlist scheduler checks for due reruns.",
     )
+    parser.add_argument(
+        "--unsafe-listen",
+        action="store_true",
+        help="Allow binding the web app to a non-loopback host. Use only on a trusted network.",
+    )
     return parser
 
 
@@ -45,7 +50,10 @@ def main() -> None:
         port=args.port,
         storage_path=args.storage_path,
         scheduler_interval_seconds=args.scheduler_poll_seconds,
+        unsafe_listen=args.unsafe_listen,
     )
+    if args.unsafe_listen:
+        print("Warning: remote clients can reach the web app on this bind host.")
     print(f"Agentic Shopping Agent web app running at {server.server_url}")
     print("Press Ctrl+C to stop.")
 

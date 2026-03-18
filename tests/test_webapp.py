@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import threading
 import time
-from urllib.request import urlopen
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 from agentic_shopping_agent.models import (
     CriterionAssessment,
@@ -16,9 +17,11 @@ from agentic_shopping_agent.models import (
 )
 from agentic_shopping_agent.ranking import build_purchase_decision, rank_options
 from agentic_shopping_agent.webapp import (
+    MAX_REQUEST_BYTES,
     ShoppingJobManager,
     ShoppingWebAppServer,
     WebShoppingRequestPayload,
+    _validate_bind_host,
 )
 
 
@@ -118,6 +121,44 @@ def test_web_server_health_endpoint(tmp_path) -> None:
         with urlopen(f"{server.server_url}/api/health", timeout=2) as response:
             payload = json.loads(response.read().decode("utf-8"))
         assert payload == {"status": "ok"}
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=1)
+
+
+def test_validate_bind_host_rejects_non_loopback_without_explicit_opt_in() -> None:
+    try:
+        _validate_bind_host("0.0.0.0", unsafe_listen=False)
+    except ValueError:
+        return
+    raise AssertionError("Expected non-loopback bind to be rejected without explicit opt-in.")
+
+
+def test_web_server_rejects_oversized_request_body(tmp_path) -> None:
+    server = ShoppingWebAppServer(
+        host="127.0.0.1",
+        port=0,
+        job_manager=ShoppingJobManager(),
+        storage_path=tmp_path / "watchlists.json",
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        payload = json.dumps({"query": "desk lamp", "notes": "x" * MAX_REQUEST_BYTES}).encode("utf-8")
+        request = Request(
+            f"{server.server_url}/api/watchlists",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urlopen(request, timeout=2)
+        except HTTPError as exc:
+            assert exc.code == 413
+            return
+        raise AssertionError("Expected oversized request to be rejected.")
     finally:
         server.shutdown()
         server.server_close()

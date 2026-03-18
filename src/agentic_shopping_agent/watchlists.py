@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import threading
 import time
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 DEFAULT_SCHEDULE_MINUTES = 360
 MAX_RUNS_PER_WATCHLIST = 20
 MAX_ALERTS = 120
+MAX_WATCHLISTS = 25
 MODEL_TOKEN_RE = re.compile(r"\b[A-Z0-9]{4,}\b")
 GENERIC_NAME_TOKENS = {
     "the",
@@ -134,6 +136,10 @@ class WatchlistDatabase(BaseModel):
     alerts: list[WatchlistAlert] = Field(default_factory=list)
 
 
+class WatchlistLimitError(RuntimeError):
+    pass
+
+
 class WatchlistManager:
     def __init__(
         self,
@@ -197,6 +203,10 @@ class WatchlistManager:
         )
 
         with self._lock:
+            if len(self._db.watchlists) >= MAX_WATCHLISTS:
+                raise WatchlistLimitError(
+                    f"Watchlist limit reached ({MAX_WATCHLISTS}). Delete or pause old watchlists before creating more."
+                )
             self._db.watchlists.append(watchlist)
             self._persist_locked()
 
@@ -436,10 +446,32 @@ class WatchlistManager:
             return WatchlistDatabase()
 
     def _persist_locked(self) -> None:
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            self._db.model_dump_json(indent=2, exclude_none=True) + "\n"
-        )
+        parent_path = self.storage_path.parent
+        existed_before = parent_path.exists()
+        parent_path.mkdir(parents=True, exist_ok=True)
+        if not existed_before:
+            try:
+                os.chmod(parent_path, 0o700)
+            except OSError:
+                pass
+
+        temp_path = self.storage_path.with_suffix(self.storage_path.suffix + ".tmp")
+        payload = self._db.model_dump_json(indent=2, exclude_none=True) + "\n"
+        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(payload)
+            os.replace(temp_path, self.storage_path)
+            try:
+                os.chmod(self.storage_path, 0o600)
+            except OSError:
+                pass
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     def _sorted_watchlists_locked(self) -> list[WatchlistRecord]:
         return sorted(

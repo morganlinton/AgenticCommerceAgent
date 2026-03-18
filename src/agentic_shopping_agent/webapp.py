@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import re
 import threading
@@ -18,7 +19,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from agentic_shopping_agent.models import PurchaseDecision, ShoppingCriterion, ShoppingRequest
 from agentic_shopping_agent.ranking import render_text_report
-from agentic_shopping_agent.watchlists import DEFAULT_SCHEDULE_MINUTES, WatchlistManager
+from agentic_shopping_agent.watchlists import (
+    DEFAULT_SCHEDULE_MINUTES,
+    WatchlistLimitError,
+    WatchlistManager,
+)
 from agentic_shopping_agent.web_ui import APP_HTML
 
 if TYPE_CHECKING:
@@ -28,6 +33,11 @@ if TYPE_CHECKING:
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 MAX_PROGRESS_MESSAGES = 30
 MAX_RETAINED_JOBS = 40
+MAX_REQUEST_BYTES = 64 * 1024
+
+
+class RequestRejectedError(ValueError):
+    pass
 
 
 class ShoppingRequestPayloadBase(BaseModel):
@@ -376,8 +386,7 @@ class ShoppingWebRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         try:
-            raw_body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
-            data = json.loads(raw_body.decode("utf-8") or "{}")
+            data = self._read_json_body()
 
             if parsed.path == "/api/jobs":
                 payload = WebShoppingRequestPayload.model_validate(data)
@@ -441,6 +450,43 @@ class ShoppingWebRequestHandler(BaseHTTPRequestHandler):
                 },
                 status=HTTPStatus.BAD_REQUEST,
             )
+        except RequestRejectedError:
+            return
+        except WatchlistLimitError as exc:
+            self._send_json(
+                {"error": str(exc)},
+                status=HTTPStatus.CONFLICT,
+            )
+
+    def _read_json_body(self) -> dict:
+        content_length_header = self.headers.get("Content-Length", "0")
+        try:
+            content_length = int(content_length_header)
+        except ValueError:
+            self._send_json(
+                {"error": "Content-Length must be a valid integer."},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            raise RequestRejectedError("invalid content-length")
+
+        if content_length < 0:
+            self._send_json(
+                {"error": "Content-Length must be non-negative."},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            raise RequestRejectedError("negative content-length")
+
+        if content_length > MAX_REQUEST_BYTES:
+            self._send_json(
+                {"error": f"Request body too large. Limit is {MAX_REQUEST_BYTES} bytes."},
+                status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            )
+            raise RequestRejectedError("request too large")
+
+        raw_body = self.rfile.read(content_length)
+        if not raw_body:
+            return {}
+        return json.loads(raw_body.decode("utf-8"))
 
     def log_message(self, format: str, *args) -> None:  # noqa: A003
         return
@@ -471,7 +517,9 @@ class ShoppingWebAppServer:
         watchlist_manager: Optional[WatchlistManager] = None,
         storage_path: Optional[Path] = None,
         scheduler_interval_seconds: float = 30.0,
+        unsafe_listen: bool = False,
     ) -> None:
+        _validate_bind_host(host, unsafe_listen=unsafe_listen)
         self.job_manager = job_manager or ShoppingJobManager()
         self.watchlist_manager = watchlist_manager or WatchlistManager(
             storage_path=storage_path or Path("runtime/watchlists.json"),
@@ -570,3 +618,24 @@ def _normalize_domain(value: str) -> str:
     if candidate.startswith("www."):
         candidate = candidate[4:]
     return candidate
+
+
+def _validate_bind_host(host: str, *, unsafe_listen: bool) -> None:
+    if unsafe_listen:
+        return
+    if _is_loopback_host(host):
+        return
+    raise ValueError(
+        "Refusing to bind the web app to a non-loopback host without --unsafe-listen. "
+        "Use 127.0.0.1, localhost, or ::1 unless you intentionally want remote access."
+    )
+
+
+def _is_loopback_host(host: str) -> bool:
+    candidate = host.strip().strip("[]")
+    if candidate == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(candidate).is_loopback
+    except ValueError:
+        return False

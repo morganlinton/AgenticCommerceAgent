@@ -81,6 +81,12 @@ If you install the package in editable mode, the same interface is available as:
 shop-agent-web --host 127.0.0.1 --port 8000
 ```
 
+For safety, the web app refuses to bind to non-loopback hosts unless you explicitly opt in:
+
+```bash
+python web_main.py --host 0.0.0.0 --unsafe-listen
+```
+
 The web app now supports:
 
 - One-off runs with live progress updates and the final comparison table
@@ -94,6 +100,8 @@ You can override the persistence path or scheduler frequency if needed:
 ```bash
 python web_main.py --storage-path runtime/watchlists.json --scheduler-poll-seconds 30
 ```
+
+The web server also enforces a JSON request-size limit and a maximum number of saved watchlists to reduce accidental local abuse and Browser Use credit burn.
 
 ### Optional flags
 
